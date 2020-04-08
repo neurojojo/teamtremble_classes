@@ -159,6 +159,20 @@ classdef findDisplacedMice < handle
             
         end
         
+        function printScoreSummary( obj, I , T )
+            
+            ingress_cutoff = I;
+            tremble_cutoff = T;
+            fprintf('\nProbability of I and T | CS+: %1.2f\n',sum( and(ingress_score_summary_csplus>ingress_cutoff,tremble_score_summary_csplus>tremble_cutoff) ) )
+            fprintf('Probability of I and T | CS-: %1.2f\n',sum( and(ingress_score_summary_csminus>ingress_cutoff,tremble_score_summary_csminus>tremble_cutoff) ) )
+            fprintf('Probability of I | CS+: %1.2f\n',sum(ingress_score_summary_csplus>ingress_cutoff) )
+            fprintf('Probability of I | CS-: %1.2f\n',sum(ingress_score_summary_csminus>ingress_cutoff) )
+            fprintf('Probability of T | CS+: %1.2f\n',sum(tremble_score_summary_csplus>tremble_cutoff) )
+            fprintf('Probability of T | CS-: %1.2f\n',sum(tremble_score_summary_csminus>tremble_cutoff) )
+        
+        end
+
+        
         function boxplot( obj, trialType, scoreType )
             
             
