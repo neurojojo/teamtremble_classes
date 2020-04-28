@@ -11,14 +11,14 @@ classdef findDisplacedMice < handle
         ingressTableLocation 
         subfoldersTable
         mouseList
-       ingress_score_summary_csplus
-       ingress_score_summary_csminus
-       tremble_score_summary_csplus
-       tremble_score_summary_csminus
+        ingress_score_summary_csplus
+        ingress_score_summary_csminus
+        tremble_score_summary_csplus
+        tremble_score_summary_csminus
     end
     
     properties (Access=private)
-       Ntrials = 10; 
+       Ntrials = 20; 
     end
     
     % BEGINNING OF ORDINARY METHODS %
@@ -48,19 +48,28 @@ classdef findDisplacedMice < handle
         end
         
         function associateKey( obj, keyTableLocation )
-% Looks into the provided 'keyTableLocation'. Populates the property keyTable, which contains information from cs_third_index_key.csv about which third index corresponds to CS+ and CS- 
+% Looks into the provided 'keyTableLocation'. Populates the property keyTable, which contains information from cs_index_key.csv about which third index corresponds to CS+ and CS- 
             obj.keyTableLocation = keyTableLocation;
             obj.keyTable = readtable(keyTableLocation);
             
             for thisMouseObj = fields( obj.mouseObjs )'
-                obj.mouseObjs.(thisMouseObj{1}).csplus_third_index = obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.keyTable.Animal), :).CSp;
-                obj.mouseObjs.(thisMouseObj{1}).csminus_third_index = obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.keyTable.Animal), :).CSm;
+                obj.mouseObjs.(thisMouseObj{1}).csplus_index = [obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), ...
+                                                                obj.keyTable.Animal), :).CSp; ...
+                                                                obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), ...
+                                                                obj.keyTable.Animal), :).CSp2];
+                obj.mouseObjs.(thisMouseObj{1}).csminus_index = [obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), ...
+                                                                obj.keyTable.Animal), :).CSm; ...
+                                                                str2double(obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), ...
+                                                                obj.keyTable.Animal), :).CSm2)];
+                                                            
             end
+            1
+            
             
         end
          
-        function fitLines_allMice( obj )
-            structfun( @(x) x.fitLine_allTrials('trial'), obj.mouseObjs );
+        function fitLines_allMice( obj, type ) % Type can be 'trial' or 'ingress'
+            structfun( @(x) x.fitLine_allTrials(type), obj.mouseObjs );
         end
         
         function fitIngress_allMice( obj )
@@ -80,21 +89,23 @@ classdef findDisplacedMice < handle
             obj.ingressTableLocation = ingressTableLocation;
             
             obj.ingressTable = readtable( ingressTableLocation );
-            
+            obj.ingressTable.ingress_csminus2_matched_to_name_10 = cellfun(@(x) str2double(x), obj.ingressTable.ingress_csminus2_matched_to_name_10 )
             for thisMouseObj = fields( obj.mouseObjs )'
                 obj.mouseObjs.(thisMouseObj{1}).associate_csplus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
                     find(cellfun(@(x) numel(regexp( x, 'csplus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
                 obj.mouseObjs.(thisMouseObj{1}).associate_csminus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
                     find(cellfun(@(x) numel(regexp( x, 'csminus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
+                
+                obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csplus,2);
+                obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csminus,2);
             end
+            
+            1
+            
         end
         
         function loadDisplacements( obj ) 
 % For each of mouseObjs in the object, this method runs loadDisplacements to extract data from the MAT file for each mouse, a method of the displacedMouse class.          
-            for thisMouseObj = fields( obj.mouseObjs )'
-                obj.mouseObjs.(thisMouseObj{1}).associate_cs_index( obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.keyTable.Animal), :).CSp, ...
-                                                                    obj.keyTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.keyTable.Animal), :).CSm );
-            end
             
             structfun(@(x) x.loadDisplacements(), obj.mouseObjs );
         end
@@ -163,12 +174,13 @@ classdef findDisplacedMice < handle
             
             ingress_cutoff = I;
             tremble_cutoff = T;
-            fprintf('\nProbability of I and T | CS+: %1.2f\n',sum( and(ingress_score_summary_csplus>ingress_cutoff,tremble_score_summary_csplus>tremble_cutoff) ) )
-            fprintf('Probability of I and T | CS-: %1.2f\n',sum( and(ingress_score_summary_csminus>ingress_cutoff,tremble_score_summary_csminus>tremble_cutoff) ) )
-            fprintf('Probability of I | CS+: %1.2f\n',sum(ingress_score_summary_csplus>ingress_cutoff) )
-            fprintf('Probability of I | CS-: %1.2f\n',sum(ingress_score_summary_csminus>ingress_cutoff) )
-            fprintf('Probability of T | CS+: %1.2f\n',sum(tremble_score_summary_csplus>tremble_cutoff) )
-            fprintf('Probability of T | CS-: %1.2f\n',sum(tremble_score_summary_csminus>tremble_cutoff) )
+            sum2 = @(x) sum(sum(x))/prod(size(x));
+            fprintf('\nProbability of I and T | CS+: %1.2f\n',sum2( and(obj.ingress_score_summary_csplus>ingress_cutoff,obj.tremble_score_summary_csplus>tremble_cutoff) ) )
+            fprintf('Probability of I and T | CS-: %1.2f\n',sum2( and(obj.ingress_score_summary_csminus>ingress_cutoff,obj.tremble_score_summary_csminus>tremble_cutoff) ) )
+            fprintf('Probability of I | CS+: %1.2f\n',sum2(obj.ingress_score_summary_csplus>ingress_cutoff) )
+            fprintf('Probability of I | CS-: %1.2f\n',sum2(obj.ingress_score_summary_csminus>ingress_cutoff) )
+            fprintf('Probability of T | CS+: %1.2f\n',sum2(obj.tremble_score_summary_csplus>tremble_cutoff) )
+            fprintf('Probability of T | CS-: %1.2f\n',sum2(obj.tremble_score_summary_csminus>tremble_cutoff) )
         
         end
 
@@ -334,14 +346,15 @@ classdef findDisplacedMice < handle
                 t_csplus_as_array = struct2array( tremble_score );
                 tremble_score = reshape( t_csplus_as_array, numel(t_csplus_as_array)/size(fields(tremble_score),1), size(fields(tremble_score),1) )';
                 % Must flip up-down because of the labeling?
-                imagesc( (log(tremble_score)), 'parent', ax );
-                set(gca,'Clim',[0,6]);
+                imagesc( (tremble_score), 'parent', ax );
+                set(gca,'Clim',[0,.1]);
                 title('Tremble scores','FontWeight','Normal','FontSize',16);
             end
             
             if strcmp( scoreType, 'ingress' )
                 ingressType = sprintf('ingressScore_%s',trialType);
                 ingress_score = structfun( @(x) x.(ingressType), obj.mouseObjs, 'UniformOutput', false );
+                
                 t_csplus_as_array = struct2array( ingress_score );
                 ingress_score = reshape( t_csplus_as_array, numel(t_csplus_as_array)/size(fields(ingress_score),1), size(fields(ingress_score),1) )';
                 % Must flip up-down because of the labeling?
@@ -398,8 +411,9 @@ classdef findDisplacedMice < handle
                 title( sprintf('%s Trial: %i (score=%1.2f)', obj.mouseList{mouseNum}, trial, mouse_data.trembleScore_csplus(trial)), 'parent', ax(1) );
                 plot( ax(2), mouse_data.corrected_displacement_csplus(trial,:) )
                 imagesc( mouse_data.cwt_csplus{trial}, 'parent', ax(3) )
-                set(gca,'YLim',[0,481]);
+                set(gca,'YLim',[0, size( mouse_data.cwt_csplus{trial},1 ) ]);
                 txt = mouse_data.trembleScore_csplus(trial);
+                colorbar();
             end
             
             if strcmp( trialType,'csminus' )
