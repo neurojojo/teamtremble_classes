@@ -18,9 +18,9 @@ mymice.makeList()
 
 mymice.associateIngressTimes('C:\\teamtremble_classes\\ingress_times_noingress_set_to_10000.csv');
 
+mymice.fitLines_allMice('coeffs');
+mymice.fitLines_allMice('fitlines');
 mymice.getIngressScore_allMice();
-mymice.fitLines_allMice('ingress');
-mymice.fitLines_allMice('trial');
 mymice.getTrembleScore_allMice();
 
 

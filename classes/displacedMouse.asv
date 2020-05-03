@@ -322,8 +322,8 @@ classdef displacedMouse < handle
             % Add corrcoefs to the ingress score stats  %
             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
             
-            obj.ingressScore_csplus = table( corrcoefs_csplus', ingressScore_csplus', 'VariableNames', {'AUC_Fit','AUC_Mag'} );
-            obj.ingressScore_csminus = table( corrcoefs_csminus', ingressScore_csminus', 'VariableNames', {'AUC_Fit','AUC_Mag'} );
+            obj.ingressScore_csplus = [ corrcoefs_csplus', ingressScore_csplus' ];
+            obj.ingressScore_csminus = [ corrcoefs_csminus', ingressScore_csminus' ];
             
         end
         
