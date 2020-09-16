@@ -2,9 +2,11 @@ classdef displacedMouse < handle
     %UNTITLED4 Summary of this class goes here
     %   Detailed explanation goes here
     
+    % To see how the AUC is calculated check line 356 (auc_rect) variable
+    % which produces the calibration factor for the auc score
+    
     properties
         mouse
-        file
         displacement
         displacement_csplus
         displacement_csminus
@@ -19,23 +21,36 @@ classdef displacedMouse < handle
         corrected_displacement_csplus
         corrected_displacement_csminus
         h5_datasets
-        trembleScore_csplus
-        trembleScore_csminus
         cwt_csplus
         cwt_csminus
         ingress_stats_CSplus
         ingress_stats_CSminus
         aucs_fraction
+        trembleScore_csplus
+        trembleScore_csminus
         ingressScore_csplus
         ingressScore_csminus
+        datadir
+        stimulus_order
+        keyTable
+        keyString
+        trialStruct
+        trialTable
+        ingressTable
+        ingressBuffer = 1000;
+        cwt_window = [1:150];
+        
     end
     
     properties( Access = private )
         
+        displacement_filename = 'DisplacementInOdor.mat';
+        stimulus_filename = 'stimuli.mat';
         % FOR CWT SPACE ISSUE %
         % constrain the size to this value %
         w_limits_x = [200:400];
         
+        threshold_min = 0.005; % Used in getTrembleScore
         
         fs = 1000; % Downsampled sampling frequency
         dsFactor = 10;
@@ -58,7 +73,7 @@ classdef displacedMouse < handle
         function obj = displacedMouse(mouseid, matfile_location)
             
             obj.mouse = mouseid;
-            obj.file = matfile_location;
+            obj.datadir = matfile_location;
             obj.Nframes = numel( obj.time_vector );
             
         end
@@ -66,13 +81,22 @@ classdef displacedMouse < handle
         function loadDisplacements( obj )
             fprintf('Loading displacement for %s\n', obj.mouse );
             
-            object = load( obj.file );
-            obj.displacement = object.displacement(:,[obj.t0:obj.dsFactor:obj.tend],:);
+            displacementfile = fullfile( obj.datadir, obj.displacement_filename );
+            
+            displacement_Mat = load( displacementfile );
+            obj.displacement = displacement_Mat.displacement(:,[obj.t0:obj.dsFactor:obj.tend],:);
+            
+            stimulusfile = fullfile( obj.datadir, obj.stimulus_filename );
+            
+            stimulus_Mat = load( stimulusfile );
+            obj.stimulus_order = stimulus_Mat.stimuli;
             
             if ~isempty(obj.csplus_index)
                 obj.displacement_csplus = reshape( permute( obj.displacement(:,:, ...
                                 obj.csplus_index(isnan(obj.csplus_index)==0)  ), [2,1,3] ), size(obj.displacement,2), ...
                                 prod( [size(obj.displacement,1), sum(isnan(obj.csplus_index)==0)] ) )';
+                            % The index of the matrix obj.displacement will
+                            % specify the CS type %
                 fprintf('Filtering\n');
                 %obj.displacement_csplus_filtered = cell2mat( ...
                 %    arrayfun(@(x) filtfilt( obj.butter_b, obj.butter_a, obj.displacement_csplus(x,:) ), [1:obj.trials],...
@@ -94,18 +118,40 @@ classdef displacedMouse < handle
             
         end
         
-        function identifyIngress(obj)
+        function selectIngress(obj)
 
-            for i=1:size(for_figures,1)
+            csplus_locs = arrayfun(@(x) obj.changepts( obj.displacement_csplus(x,:), 'minpeakheight', 2.5 ), [1:size( obj.displacement_csplus ,1)], 'UniformOutput', false );
+            csminus_locs = arrayfun(@(x) obj.changepts( obj.displacement_csminus(x,:), 'minpeakheight', 2.5 ), [1:size( obj.displacement_csminus ,1)], 'UniformOutput', false );
 
-                plot( for_figures(i,:).Displacement );
-                lines_ = for_figures(i,:).Locs{1};
+            % Obtaining the change points by manual inspection
+            % (CS plus)
 
-                rowfun( @(x,y) text(y,25,sprintf('%i',x) ), table( [1:numel(lines_)]', lines_ ) );
+            keypressFxn1 = @(x) fprintf('%i', str2double(x) );
+
+            f = figure('WindowKeyPressFcn', @(handle,event) keypressFxn1(event.Key), 'Tag', 'Fig1', 'WindowState','maximized' );
+
+            ingressTable = table ( [1:size(csplus_locs,2)+size(csminus_locs,2)]',...
+                [csplus_locs';csminus_locs'], [obj.displacement_csplus;obj.displacement_csminus],...
+                [repmat({'csplus'},size(csplus_locs,2),1);repmat({'csminus'},size(csplus_locs,2),1)],...
+                nan( size(csplus_locs,2)+size(csminus_locs,2), 1 ),...
+                'VariableNames', {'Index','Locs','Displacement','Type','Changepoint'});
+            idx = [1:size(obj.displacement_csplus,2)];
+            
+            for i=1:size(ingressTable,1)
+
+                plot( ingressTable(i,:).Displacement ); ylim( [ min(ingressTable(i,:).Displacement), max(ingressTable(i,:).Displacement) ] );
+                lines_ = ingressTable(i,:).Locs{1};
+                title( sprintf('%s Trial %i',obj.mouse,i) );
+                rowfun( @(x,y) text(y, 0.9*max(ingressTable(i,:).Displacement) ,sprintf('%i',x) ), table( [1:numel(lines_)]', lines_' ) );
                 arrayfun( @(x) line([x,x],[-20,30],'color','k'), lines_ );
-                mychangept(i) = inputdlg('Test');
-
+                
+                tmp = str2num(cell2mat(inputdlg('Enter ingress line')));
+                if ne(tmp,0); ingressTable(i,:).Changepoint = ingressTable(i,:).Locs{1}( tmp ); else; ingressTable(i,:).Changepoint = 10000; end
+                
             end
+            
+            obj.ingressTable = ingressTable;
+            fprintf('\nSaved ingress table for %s\n',obj.mouse);
             
         end
         
@@ -117,16 +163,7 @@ classdef displacedMouse < handle
             obj.ingress_index_csminus = array_ingress_times;
         end
 
-        function output = max_of_grad_adj_img( obj, input_image )
-           
-            img = real( input_image );
-            [~,Gy]= imgradientxy( img );
-            %min_Gy = graythresh(Gy(:));
-            %x = arrayfun( @(x) (x<min_Gy), Gy );
-            featureIm = im2bw(imcomplement(Gy),1).*img;
-            output = max(max(featureIm));
-            
-        end
+
         % Line-fitting %
         function myfitline = fitLine( obj, trial, trialType, varargin ) % Fits a piecewise linear function
             d = 1000;
@@ -155,11 +192,13 @@ classdef displacedMouse < handle
             if strcmp(trialType,'CSplus')
                 Y = obj.displacement_csplus(trial,:);
                 ing = obj.ingress_index_csplus(trial);
-                if eq(ing,0); myfitline = zeros(1,Nframes); return; end; % Create zero-vector for displacements lacking ingress
+                % WE SET NO INGRESSES TO 10,000
+                if eq(ing,10000); myfitline = smooth(Y,Nframes/10)'; return; end; % Create zero-vector for displacements lacking ingress
             else if strcmp(trialType,'CSminus')
                 Y = obj.displacement_csminus(trial,:);
                 ing = obj.ingress_index_csminus(trial);
-                if eq(ing,0); myfitline = zeros(1,Nframes); return; end; % Create zero-vector for displacements lacking ingress
+                % WE SET NO INGRESSES TO 10,000
+                if eq(ing,10000); myfitline = smooth(Y,Nframes/10)'; return; end; % Create zero-vector for displacements lacking ingress
                 else
                     fprintf("Specify either 'CSplus' or 'CSminus' as a third argument\n");
                     myfitline = [];
@@ -221,6 +260,28 @@ classdef displacedMouse < handle
             
         end
         
+        function result = searchMouse( obj, query )
+        
+            output = 1+(regexp( obj.keyString, query ) - 1)/2;
+            query_stripped = regexp(query,'[pm]','match');
+            len_sequence = numel( query_stripped );
+            
+            % Retrieve based on csp or csm
+            result = [];
+            table_variables = {};
+            if ~isempty(output)
+                for i = output;
+                    tmp_result = [];
+                    for j = 0:len_sequence-1
+                        tmp_result = [ tmp_result, obj.trialTable( i+j, : ).(query_stripped{j+1})];
+                        table_variables{j+1} = sprintf('%s%i',query_stripped{j+1},j+1);
+                    end
+                    result = [result; tmp_result];
+                end
+            end
+            result = array2table( result, 'VariableNames', table_variables );
+        end
+        
         function getTrembleScore( obj )
            
             fprintf('Computing tremble score for %s\n', obj.mouse );
@@ -231,30 +292,52 @@ classdef displacedMouse < handle
             
             % CSminusPLUS
             fprintf('Computing cwt for %s\n',obj.mouse);
-            w = arrayfun( @(trial) cwt( obj.corrected_displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
-            close all;
-            w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
-            w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
-            % REMOVE EXCESSIVE INFORMATION FROM CWT %
-            w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
-            obj.cwt_csplus = w_conj;
+            
+            if isempty( obj.cwt_csplus )
+                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
+                close all;
+                w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
+                w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
+                % REMOVE EXCESSIVE INFORMATION FROM CWT %
+                w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
+                obj.cwt_csplus = w_conj;
+            end
             
             % Frequency band 200-350, time is 2000:8000 (2000 = cs on, 8000
             % = arbitrary end)
-            obj.trembleScore_csplus = cellfun( @(x) obj.max_of_grad_adj_img( x(:,[2000:8000]) ), w_conj, 'ErrorHandler',@(a,b) NaN);
+            ingressBuffer = 1000;
+            
+            obj.trembleScore_csplus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csplus{i}(:,[2000: obj.ingress_index_csplus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
+            
+            if numel(obj.trembleScore_csplus.Mag)<20;
+                1
+            end
             
             % CSminusMINUS
-            w = arrayfun( @(trial) cwt( obj.corrected_displacement_csminus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
-            close all;
-            w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
-            w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
-            % REMOVE EXCESSIVE INFORMATION FROM CWT %
-            w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
-            obj.cwt_csminus = w_conj;
-                
+            if isempty( obj.cwt_csminus )
+                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csminus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
+                close all;
+                w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
+                w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
+                % REMOVE EXCESSIVE INFORMATION FROM CWT %
+                w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
+                obj.cwt_csminus = w_conj;
+            end
+            
             % Frequency band 200-350, time is 2000:8000 (2000 = cs on, 8000
             % = arbitrary end)
-            obj.trembleScore_csminus = cellfun( @(x) obj.max_of_grad_adj_img( x(:,[2000:8000]) ), w_conj,'ErrorHandler',@(a,b) NaN );
+            
+            obj.trembleScore_csminus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csminus{i}(:,[2000: obj.ingress_index_csminus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csminus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
+                        
+            if numel(obj.trembleScore_csminus.Mag)<20;
+                1
+            end
+            
+            % Duration = Fraction of time between CS onset and the detected
+            % ingress during the threshold tremble power of 0.001 is exceeded
+            obj.trembleScore_csplus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csplus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csplus{i}( obj.cwt_window, [2000: obj.ingress_index_csplus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN );
+            obj.trembleScore_csminus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csminus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csminus{i}( obj.cwt_window, [2000: obj.ingress_index_csminus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:numel(obj.ingress_index_csminus)], 'ErrorHandler', @(x,y) NaN );
+            
             toc;
             
         end
@@ -296,12 +379,15 @@ classdef displacedMouse < handle
             Ntrials = size( obj.displacement_csplus, 1 );
             
             aucs_ = arrayfun( @(trial) trapz( obj.displacement_csplus( trial , obj.ingress_index_csplus(trial):end ) ), [1:Ntrials] );
-            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csplus(trial,:)) - obj.ingress_index_csplus(trial)] * max2(obj.displacement_csplus( : , obj.ingress_index_csplus(trial):end )), [1:Ntrials], 'ErrorHandler', @(x,y) NaN );
+            
+            % Currently the maximum AUC possible is calibrated to the
+            % maximum displacement achieved by a given mouse
+            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csplus(trial,:)) - obj.ingress_index_csplus(trial)] * max2(obj.displacement_csplus), [1:Ntrials], 'ErrorHandler', @(x,y) NaN );
             aucs_(aucs_<0) = 0;
             ingressScore_csplus = aucs_./aucs_rect;
             
             aucs_ = arrayfun( @(trial) trapz( obj.displacement_csminus( trial , obj.ingress_index_csminus(trial):end ) ), [1:Ntrials] );
-            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csplus(trial,:)) - obj.ingress_index_csplus(trial)] * max2(obj.displacement_csplus( : , obj.ingress_index_csplus(trial):end )), [1:Ntrials] );
+            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csminus(trial,:)) - obj.ingress_index_csminus(trial)] * max2(obj.displacement_csplus), [1:Ntrials] );
             aucs_(aucs_<0) = 0;
             ingressScore_csminus = aucs_./aucs_rect;
             
@@ -412,37 +498,45 @@ classdef displacedMouse < handle
             % Internal parameters for CWT %
             No = 10;
             Nv = 48;
+            cwt = 0;
+            ingress = 0;
             
             % Checking for options %
             if strcmp(varargin{1},'cwt')
-                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:10], 'UniformOutput', false );
-            end
-            close all;
-            
-            % Axes and tabs laid out for plotting all trials %
-            figure('color','w'); 
-            tabs_ = arrayfun( @(x) uitab('Title',sprintf('Tab %i',x)), [1:10] );
-            ax_ = arrayfun( @(tab) axes(tab,'NextPlot','add','Ylim',[-3,20]), tabs_ );
-            
-            % Plotting %
-            arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.corrected_displacement_csplus(x,:) ), [1:10] );
-            arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.corrected_displacement_csminus(x,:) ), [1:10] );
-            
-            if ~isempty( obj.fitlines_CSplus )
-                
-                arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.fitlines_CSplus(x,:), 'k' ), [1:10], 'ErrorHandler', @(x,y) [], 'UniformOutput', false );
-                arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.fitlines_CSminus(x,:), 'k' ), [1:10], 'ErrorHandler', @(x,y) [], 'UniformOutput', false );
-                
+                cwt = 1;
+                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:10], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
+            else
+                ingress = 1;
             end
             
+            % Axes and tabs laid out for plotting all trials %
+            if ingress
+                figure('color','w'); 
+                tabs_ = arrayfun( @(x) uitab('Title',sprintf('Trial %i',x)), [1:10] );
+                ax_ = arrayfun( @(tab) axes(tab,'NextPlot','add','Ylim',[-3,20]), tabs_ );
+
+                % Plotting %
+                arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.displacement_csplus(x,:), 'b' ), [1:10] );
+                arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.displacement_csminus(x,:), 'r' ), [1:10] );
+                
+                if ~isempty( obj.fitlines_CSplus )
+
+                    arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.fitlines_CSplus(x,:), 'k' ), [1:10], 'ErrorHandler', @(x,y) [], 'UniformOutput', false );
+                    %arrayfun(@(x) plot( ax_(x), obj.time_vector(1:end), obj.fitlines_CSminus(x,:), 'k' ), [1:10], 'ErrorHandler', @(x,y) [], 'UniformOutput', false );
+
+                end
+                
+            end
             
             % Axes and tabs laid out for plotting all trials %
-            figure; 
-            tabs_ = arrayfun( @(x) uitab('Title',sprintf('Tab %i',x)), [1:10] );
-            lims = size(w{1});
-            im_ax_ = arrayfun( @(tab) axes(tab,'NextPlot','add','Ylim',[0,lims(1)],'Xlim',[0,lims(2)]), tabs_ );
-            % Plotting %
-            arrayfun(@(x) imagesc( w{x}.*conj(w{x}), 'parent', im_ax_(x),[0,0.003] ), [1:10] );
+            if cwt
+                figure('color','w'); 
+                tabs_ = arrayfun( @(x) uitab('Title',sprintf('Tab %i',x)), [1:10] );
+                lims = size(w{1});
+                im_ax_ = arrayfun( @(tab) axes(tab,'NextPlot','add','Ylim',[0,lims(1)],'Xlim',[0,lims(2)]), tabs_ );
+                % Plotting %
+                arrayfun(@(x) imagesc( w{x}.*conj(w{x}), 'parent', im_ax_(x),[0,0.003] ), [1:10] ); 
+            end
                     
         end
         
@@ -458,7 +552,40 @@ classdef displacedMouse < handle
         
         end
         
+        function varargout = changepts(varargin)
+
+            window = 100;
             
+            minpeakheight = varargin{ 1+find( strcmp( varargin, 'minpeakheight' )==1 ) };
+            
+            idx = [1:numel(varargin{2})];
+            data = varargin{2};
+
+                localz = zscore(arrayfun( @(x) mean(data(x:x+window))-mean(data(x-window:x)), [window+1:numel(data)-window] ));
+                
+                [pks,locs] = findpeaks(localz,'minpeakheight',prctile(localz,95),'minpeakdistance',100);
+                varargout{1} = locs;
+                varargout{2} = pks;
+                
+        end
+
     end
+    
+    methods(Static)
+        
+            function output = max_of_grad_adj_img( input_image )
+           
+                img = real( input_image );
+                [~,Gy]= imgradientxy( img );
+                %min_Gy = graythresh(Gy(:));
+                %x = arrayfun( @(x) (x<min_Gy), Gy );
+                featureIm = im2bw(imcomplement(Gy),1).*img;
+                output = max(max(featureIm,[],1));
+                if isempty(output); output = nan; end
+
+            end
+        
+    end
+    
 end
 
