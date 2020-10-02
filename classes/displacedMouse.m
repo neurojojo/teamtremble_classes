@@ -405,39 +405,6 @@ classdef displacedMouse < handle
             
         end
         
-        function writeH5data( obj, myh5dir, field )
-            
-            myh5file = sprintf('%s\\%s.h5',myh5dir,obj.mouse);
-            
-            if exist( myh5file ) % h5 File already present
-                myh5info = h5info( myh5file );
-                datasetnames = arrayfun(@(x) x.Name, myh5info.Datasets , 'UniformOutput', false);
-                if any(strcmp(datasetnames,field)) % Field already exists in the database
-                    fprintf('The field %s already exists and is being overwritten\n',field);
-                else
-                    h5create( myh5file, sprintf('/%s',field), size( obj.(field) ) );
-                end
-            else % If file does not exist %
-                if size( obj.(field) , 1 ) > 10
-                    fprintf('Writing compressed h5\n');
-                    h5create( myh5file, sprintf('/%s',field), size( obj.(field) ) );
-                else
-                    h5create( myh5file, sprintf('/%s',field), size( obj.(field) ) );
-                end
-            end
-            
-            h5write( myh5file, sprintf('/%s',field), obj.(field) );
-            % Add the h5 info to the log structure
-            obj.addH5toLog( myh5file, sprintf('/%s',field), datestr(datetime) );
-            
-        end
-        
-        function addH5toLog(obj, myh5file, myh5field, myh5)
-            
-            if ~istable( obj.h5_datasets ); obj.h5_datasets = table('VariableTypes',{'string','string','string'}, 'Size',[0,3],'VariableNames',{'H5_file','Field','Time_created'}); end;
-            obj.h5_datasets(end+1,:) = [ { myh5file }, { myh5field }, { myh5 } ];
-            
-        end
         
         % Overloaded functions %
         function save( obj, varargin )
