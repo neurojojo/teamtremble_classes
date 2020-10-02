@@ -40,6 +40,10 @@ classdef displacedMouse < handle
         ingressBuffer = 1000;
         cwt_window = [1:150];
         
+        t0 = 60000;
+        tend = 200000;
+        dsFactor = 10;
+        
     end
     
     properties( Access = private )
@@ -53,14 +57,10 @@ classdef displacedMouse < handle
         threshold_min = 0.005; % Used in getTrembleScore
         
         fs = 1000; % Downsampled sampling frequency
-        dsFactor = 10;
         trials = 20;
         time_vector = (0:14000)/1000;
         
         Nframes = [];
-        
-        t0 = 60000;
-        tend = 200000;
         
         d = 400; % An internal parameter that is calibrated to the duration before and after an ingress
         % Use this in the fitLine subfunction
@@ -155,6 +155,7 @@ classdef displacedMouse < handle
             
         end
         
+        % Set properties of this mouse %
         function associate_csplus_index(obj, array_ingress_times)
             obj.ingress_index_csplus = array_ingress_times;
         end
@@ -342,33 +343,6 @@ classdef displacedMouse < handle
             
         end
         
-        function myinterpolatedline = interpLine( obj, trial, trialType ) % Fits a piecewise linear function
-           
-            if strcmp(trialType,'CSplus')
-                Y = obj.corrected_displacement_csplus(trial,:);
-                ing = obj.ingress_index_csplus(trial);
-            else if strcmp( trialType,'CSminus');
-            	Y = obj.corrected_displacement_csminus(trial,:);
-                ing = obj.ingress_index_csplus(trial);
-                end
-            end
-            
-            D = abs( zscore( diff( Y ) ) );
-            [~,sorted_D] = sort(D);
-            interpolate_idx = [ sorted_D(end-1), sorted_D(end) ];
-            interp_pts = numel([interpolate_idx(1):interpolate_idx(2)]);
-            
-            Y([interpolate_idx(1):interpolate_idx(2)]) = linspace( Y(interpolate_idx(1)), Y(interpolate_idx(2)), numel( Y([interpolate_idx(1):interpolate_idx(2)]) ) );
-            %myfit = polyfit( [interpolate_idx(1):interpolate_idx(2)]-interpolate_idx(1), Y( [ interpolate_idx(1):interpolate_idx(2) ] ), 2 );
-            
-            %Y([interpolate_idx(1):interpolate_idx(2)]) = polyval( myfit, [interpolate_idx(1):interpolate_idx(2)]-interpolate_idx(1) );
-            
-            %interp1( Y([interpolate_idx(1)-100:interpolate_idx(1)-10, interpolate_idx(2)+10:interpolate_idx(2)+100]), ...
-            %    [interpolate_idx(1)-100:interpolate_idx(1)-10, interpolate_idx(2)+10:interpolate_idx(2)+100], ...
-            %   [interpolate_idx(1):interpolate_idx(2)] )
-            
-        end
-        
         function getIngressScore( obj )
             fprintf('Getting ingress score for %s\n',obj.mouse);
             max2 = @(x) max(max(x));
@@ -539,19 +513,7 @@ classdef displacedMouse < handle
             end
                     
         end
-        
-        
-        function image = im2bw2( obj,image,varargin )
-            
-            if isempty(varargin{1})
-                min_Gy = graythresh( image(:) );
-            else
-                min_Gy = varargin{1};
-            end
-            image = arrayfun( @(x) (x>min_Gy), image );
-        
-        end
-        
+       
         function varargout = changepts(varargin)
 
             window = 100;

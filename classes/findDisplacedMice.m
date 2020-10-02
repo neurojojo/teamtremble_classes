@@ -78,7 +78,7 @@ classdef findDisplacedMice < handle
                 stimulus_order_file = fullfile( obj.mouseObjs.(thisMouseObj{1}).datadir, 'stimuli.mat' );
                 stimuli = load( stimulus_order_file );
                 stimuli = stimuli.stimuli;
-                if ~strcmp(class( stimuli ),'single'); fprintf('Stimuli must be an array of numbers!'); return; end;
+                %if ~strcmp(class( stimuli ),'single'); fprintf('Stimuli must be an array of numbers!'); return; end;
                 
                 obj.mouseObjs.(thisMouseObj{1}).csplus_index = [obj.keyTable( obj.keyTable.Animal == thisMouseObj, : ).CSp; ...
                                                                 obj.keyTable( obj.keyTable.Animal == thisMouseObj, : ).CSp2];
@@ -147,7 +147,11 @@ classdef findDisplacedMice < handle
             
         end
 
-        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        % Functions that are invoked only from a demo %
+        % script or command line                      %
+        %                                             %
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function fitLines_allMice( obj, type ) % Type can be 'coeffs' or 'fitlines'
             structfun( @(x) x.fitLine_allTrials(type), obj.mouseObjs );
         end
@@ -179,103 +183,12 @@ classdef findDisplacedMice < handle
                 obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csminus,2);
             end
             
-            1
-            
-            
         end
         
-        function loadDisplacements( obj ) 
-% For each of mouseObjs in the object, this method runs loadDisplacements to extract data from the MAT file for each mouse, a method of the displacedMouse class.          
-            
+        function loadDisplacements_allMice( obj ) 
+% For each of mouseObjs in the object, this method runs loadDisplacements to extract data from the MAT file for each mouse, a method of the displacedMouse class.                     
             structfun(@(x) x.loadDisplacements(), obj.mouseObjs );
-        end
-        
-        
-        function computeFourier( obj )
-% For each of mouseObjs in the object, if there is loaded mouseObjs displacement data, this method uses data to run getFourier, a method of the displacedMouse class.  
-            for thisMouseObj = fields( obj.mouseObjs )'
-               obj.mouseObjs.(thisMouseObj{1}).getFourier(); 
-            end
-        end
-        
-        function makeList( obj )
             obj.mouseList = fields( obj.mouseObjs );
-        end
-        
-        function saveAsH5( obj, fieldsAsCell )
-            for myfield = fieldsAsCell
-                arrayfun( @(x) x.writeH5data( 'C:\\teamtremble_classes\\h5', myfield ), obj.mouseObjs );
-            end
-        end
-        
-        function makeScoreSummary( obj, varargin )
-            
-            if nargin>1
-                trials = varargin{1};
-            else
-                trials = [1:obj.Ntrials];
-            end
-            
-            tremble_score = structfun( @(x) x.trembleScore_csplus, obj.mouseObjs, 'UniformOutput', false );
-            t_csplus_as_array = struct2array( tremble_score );
-            obj.tremble_score_summary_csplus = reshape( t_csplus_as_array, numel(t_csplus_as_array)/size(fields(tremble_score),1), size(fields(tremble_score),1) )';
-            obj.tremble_score_summary_csplus = log( obj.tremble_score_summary_csplus(:,trials) );
-            
-            tremble_score = structfun( @(x) x.trembleScore_csminus, obj.mouseObjs, 'UniformOutput', false );
-            t_csminus_as_array = struct2array( tremble_score );
-            obj.tremble_score_summary_csminus = reshape( t_csminus_as_array, numel(t_csminus_as_array)/size(fields(tremble_score),1), size(fields(tremble_score),1) )';
-            obj.tremble_score_summary_csminus = log( obj.tremble_score_summary_csminus(:,trials) );
-            
-            ingress_score = structfun( @(x) x.ingressScore_csplus, obj.mouseObjs, 'UniformOutput', false );
-            t_csplus_as_array = struct2array( ingress_score );
-            obj.ingress_score_summary_csplus = reshape( t_csplus_as_array, numel(t_csplus_as_array)/size(fields(ingress_score),1), size(fields(ingress_score),1) )';
-            obj.ingress_score_summary_csplus = obj.ingress_score_summary_csplus(:,trials);
-            
-            ingress_score = structfun( @(x) x.ingressScore_csminus, obj.mouseObjs, 'UniformOutput', false );
-            t_csminus_as_array = struct2array( ingress_score );
-            obj.ingress_score_summary_csminus = reshape( t_csminus_as_array, numel(t_csminus_as_array)/size(fields(ingress_score),1), size(fields(ingress_score),1) )';
-            obj.ingress_score_summary_csminus = obj.ingress_score_summary_csminus(:,trials);
-            
-        end
-        
-        function printScoreSummary( obj, I , T )
-            
-            ingress_cutoff = I;
-            tremble_cutoff = T;
-            sum2 = @(x) sum(sum(x))/prod(size(x));
-            fprintf('\nProbability of I and T | CS+: %1.2f\n',sum2( and(obj.ingress_score_summary_csplus>ingress_cutoff,obj.tremble_score_summary_csplus>tremble_cutoff) ) )
-            fprintf('Probability of I and T | CS-: %1.2f\n',sum2( and(obj.ingress_score_summary_csminus>ingress_cutoff,obj.tremble_score_summary_csminus>tremble_cutoff) ) )
-            fprintf('Probability of I | CS+: %1.2f\n',sum2(obj.ingress_score_summary_csplus>ingress_cutoff) )
-            fprintf('Probability of I | CS-: %1.2f\n',sum2(obj.ingress_score_summary_csminus>ingress_cutoff) )
-            fprintf('Probability of T | CS+: %1.2f\n',sum2(obj.tremble_score_summary_csplus>tremble_cutoff) )
-            fprintf('Probability of T | CS-: %1.2f\n',sum2(obj.tremble_score_summary_csminus>tremble_cutoff) )
-        
-        end
-
-        
-        function stimorder_summary( obj )
-           
-            % This is a mess!
-            
-            obj.all_stim_orders = structfun( @(x) [x.stimulus_order;nan(40-numel(x.stimulus_order),1)], obj.mouseObjs , 'UniformOutput', false);
-            
-            for thisfield = fields( obj.all_stim_orders )'
-               
-                tmp = obj.all_stim_orders.(thisfield{1});
-                keys = obj.keyTable(categorical(obj.keyTable.Animal)==thisfield{1},:);
-                
-                mytable = table( repmat( '', 40, 1 ) );
-                
-                mykeytypes = obj.keyTable.Properties.VariableNames(2:end);
-                for keytype_ = mykeytypes
-                    mytable( find(tmp==keys.(keytype_{1}) ), 1 ) = repmat( {keytype_{1}}, numel(find(tmp==keys.(keytype_{1}))), 1 );
-                end
-                
-                obj.stimorder_struct.(thisfield{1}) = sprintf('%s',table2array(mytable(:,1)));
-                
-            end
-            
-            
         end
         
         function result_table = search( obj, query )
@@ -405,7 +318,6 @@ classdef findDisplacedMice < handle
         end
         
         function boxplot( obj, trialType, scoreType )
-            
             
             Nmice = numel( fields(obj.mouseObjs) );
             Lbls = fields( obj.mouseObjs );
@@ -579,32 +491,6 @@ classdef findDisplacedMice < handle
             
         end
         
-        % Added May 17
-        function output = for_tsne( obj )
-            
-            output = struct();
-            
-            % Get CS+ tremble score
-            tremble_score = structfun( @(x) x.trembleScore_csplus.Dur, obj.mouseObjs, 'UniformOutput', false );
-            t_as_array = struct2array( tremble_score );
-            output.tremble_scores_csplus = reshape( t_as_array, numel(t_as_array)/size(fields(tremble_score),1), size(fields(tremble_score),1) )';
-                
-            % Get CS- tremble score
-            tremble_score = structfun( @(x) x.trembleScore_csminus.Dur, obj.mouseObjs, 'UniformOutput', false );
-            t_as_array = struct2array( tremble_score );
-            output.tremble_scores_csminus = reshape( t_as_array, numel(t_as_array)/size(fields(tremble_score),1), size(fields(tremble_score),1) )';
-            
-            % Get CS+ tremble score
-            ingress_score = structfun( @(x) x.ingressScore_csplus.AUC_Mag, obj.mouseObjs, 'UniformOutput', false );
-            t_as_array = struct2array( ingress_score );
-            output.ingress_scores_csplus = reshape( t_as_array, numel(t_as_array)/size(fields(ingress_score),1), size(fields(ingress_score),1) )';
-
-            ingress_score = structfun( @(x) x.ingressScore_csminus.AUC_Mag, obj.mouseObjs, 'UniformOutput', false );
-            t_as_array = struct2array( ingress_score );
-            output.ingress_scores_csminus = reshape( t_as_array, numel(t_as_array)/size(fields(ingress_score),1), size(fields(ingress_score),1) )';
-
-        end
-        
         function plot( obj, trialType, scoreType )
             
             trialType = lower(trialType);
@@ -663,7 +549,7 @@ classdef findDisplacedMice < handle
             dcm_obj = datacursormode(fig);
             % NOTE THIS QUIRK: Had to use a static method for the dcm
             % function as ordinary methods didn't work
-            set(dcm_obj, 'UpdateFcn', {@findDisplacedMice.myfxn,obj,trialType})
+            set(dcm_obj, 'UpdateFcn', {@findDisplacedMice.dynamic_plot_fxn,obj,trialType})
             
             if ~strcmp( scoreType, 'both' ); colorbar(); end
         end
@@ -673,8 +559,9 @@ classdef findDisplacedMice < handle
     
     % BEGINNING OF STATIC METHODS %
     methods(Static)
-
-        function txt = myfxn(~,event_obj,obj,trialType)
+        
+        % Called by plot %
+        function txt = dynamic_plot_fxn(~,event_obj,obj,trialType)
             trial = event_obj.Position(1);
             mouseNum = event_obj.Position(2); 
             if isempty( obj.mouseList ); obj.makeList(); end;
@@ -706,13 +593,6 @@ classdef findDisplacedMice < handle
             arrayfun(@(x) set(x,'XLabel',text(0,0,'Frame')), ax )
             set( ax(1), 'YLabel', text(0,0,'Displacement (mm)') );
             set( ax(2), 'YLabel', text(0,0,'Frequency'), 'YTick', [] );
-            
-        end
-
-        function output = mycorrcoef( x , y )
-            
-           output = corrcoef( x, y );
-           output = output(2);
             
         end
         

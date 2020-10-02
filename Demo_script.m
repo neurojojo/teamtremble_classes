@@ -8,7 +8,7 @@ mymice = findDisplacedMice( 'C:\ActivePassiveAnalysis2' );
 %
 mymice.associateKey('C:\\teamtremble_classes\\cs_all_indices_key.csv');
 
-mymice.loadDisplacements();
+mymice.loadDisplacements_allMice();
 
 mymice.makeList()
 % Manually curated file with three columns (Animal ID, third index of
