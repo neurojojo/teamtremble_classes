@@ -23,7 +23,8 @@ classdef findDisplacedMice < handle
     end
     
     properties (Access=private)
-       Ntrials = 20; 
+       Ntrials = 10; % Number of trials per cs type 
+       CStypes = 2;
        Nmice;
     end
     
@@ -58,7 +59,7 @@ classdef findDisplacedMice < handle
             
         end
         
-        function selectIngress( obj )
+        function selectIngress_allMice( obj )
              structfun( @(x) x.selectIngress(), obj.mouseObjs );
         end
         
@@ -120,9 +121,10 @@ classdef findDisplacedMice < handle
                 obj.mouseObjs.(thisMouseObj{1}).keyString = sprintf('%s',categorical(empty_cell));
                 
                 for types_ = translation_table.stimType'
+                    fprintf('Analyzing %s\n',thisMouseObj{1});
                     obj.mouseObjs.(thisMouseObj{1}).trialStruct.(types_{1}) = zeros(numel(stimuli),1);
                     thisType = 1+ ( regexp( obj.mouseObjs.(thisMouseObj{1}).keyString, types_{1} )-1 )/2;
-                    obj.mouseObjs.(thisMouseObj{1}).trialStruct.(types_{1})( thisType ) = [1:10]';
+                    obj.mouseObjs.(thisMouseObj{1}).trialStruct.(types_{1})( thisType ) = [ 1 : obj.Ntrials]';
                 end
                 rownames = arrayfun( @(x) sprintf('Trial_%i',x), [1:Ntrials], 'UniformOutput', false )
                 obj.mouseObjs.(thisMouseObj{1}).trialTable = struct2table( obj.mouseObjs.(thisMouseObj{1}).trialStruct, 'RowNames', rownames );
@@ -131,8 +133,8 @@ classdef findDisplacedMice < handle
                 if numel(translation_table.keyCode)==3
                    tmp1 = obj.mouseObjs.(thisMouseObj{1}).trialTable.p1;
                    tmp2 = obj.mouseObjs.(thisMouseObj{1}).trialTable.m1;
-                   obj.mouseObjs.(thisMouseObj{1}).trialTable.p(tmp1~=0) = [1:10];
-                   obj.mouseObjs.(thisMouseObj{1}).trialTable.m(tmp2~=0) = [1:10];
+                   obj.mouseObjs.(thisMouseObj{1}).trialTable.p(tmp1~=0) = [ 1:obj.Ntrials ];
+                   obj.mouseObjs.(thisMouseObj{1}).trialTable.m(tmp2~=0) = [ 1:obj.Ntrials ];
                 end
                 
                 % Alternative experimental set-up (1-4)
@@ -166,22 +168,35 @@ classdef findDisplacedMice < handle
         
         function associateIngressTimes( obj, ingressTableLocation )
 % Looks into the provided 'ingressTableLocation'. Populates the property ingressTable, which contains ingress csplus frames (first ten columns) and csminus frames (second ten columns)  
-            obj.ingressTableLocation = ingressTableLocation;
+            if exist('ingressTableLocation'); 
+                obj.ingressTableLocation = ingressTableLocation;
             
-            obj.ingressTable = readtable( ingressTableLocation );
-            if isa('obj.ingressTable.ingress_csminus2_matched_to_name_10','str'); 
-                obj.ingressTable.ingress_csminus2_matched_to_name_10 = cellfun(@(x) str2double(x), obj.ingressTable.ingress_csminus2_matched_to_name_10 );
-            end
-            
-            for thisMouseObj = fields( obj.mouseObjs )'
-                obj.mouseObjs.(thisMouseObj{1}).associate_csplus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
-                    find(cellfun(@(x) numel(regexp( x, 'csplus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
-                obj.mouseObjs.(thisMouseObj{1}).associate_csminus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
-                    find(cellfun(@(x) numel(regexp( x, 'csminus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
+                obj.ingressTable = readtable( ingressTableLocation );
+                if isa('obj.ingressTable.ingress_csminus2_matched_to_name_10','str'); 
+                    obj.ingressTable.ingress_csminus2_matched_to_name_10 = cellfun(@(x) str2double(x), obj.ingressTable.ingress_csminus2_matched_to_name_10 );
+                end
+
+                for thisMouseObj = fields( obj.mouseObjs )'
+                    obj.mouseObjs.(thisMouseObj{1}).associate_csplus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
+                        find(cellfun(@(x) numel(regexp( x, 'csplus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
+                    obj.mouseObjs.(thisMouseObj{1}).associate_csminus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
+                        find(cellfun(@(x) numel(regexp( x, 'csminus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
+
+                    obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csplus,2);
+                    obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csminus,2);
+                end
+            else
+                for thisMouseObj = fields( obj.mouseObjs )'
+                    
+                    obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type = categorical(obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type);
+                    
+                    obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus = obj.mouseObjs.(thisMouseObj{1}).ingressTable.Changepoint( obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type=='csplus' );
+                    obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus = obj.mouseObjs.(thisMouseObj{1}).ingressTable.Changepoint( obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type=='csminus' );
                 
-                obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csplus,2);
-                obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csminus,2);
+                end
             end
+            
+            
             
         end
         
@@ -288,16 +303,16 @@ classdef findDisplacedMice < handle
             
             obj.Nmice = numel(fields(obj.mouseObjs));
             
-            fields_ = [cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials )', obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} );...
-                cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials )', obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} )];
+            fields_ = [cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} );...
+                cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} )];
             
-            trials = array2table( repmat( [1:10]', numel(fields_)/10 , 1 ), 'VariableNames', {'Trials'} );
+            trials = array2table( repmat( [1:obj.Ntrials]', numel(fields_)/obj.Ntrials , 1 ), 'VariableNames', {'Trials'} );
             
-            trialtype = array2table( [repmat( [ repmat( {'CS+1'}, 10, 1 ); repmat( {'CS+2'}, 10, 1 ) ], Nmice, 1 );...
-                repmat( [ repmat( {'CS-1'}, 10, 1 ); repmat( {'CS-2'}, 10, 1 ) ], Nmice, 1 )], 'VariableNames', {'TrialType'} );
+            trialtype = array2table( [repmat( [ repmat( {'CS+1'}, obj.Ntrials, 1 ); repmat( {'CS+2'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
+                repmat( [ repmat( {'CS-1'}, obj.Ntrials, 1 ); repmat( {'CS-2'}, obj.Ntrials, 1 ) ], Nmice, 1 )], 'VariableNames', {'TrialType'} );
             
-            trialtype_generic = categorical( [repmat( [ repmat( {'CS+'}, 10, 1 ); repmat( {'CS+'}, 10, 1 ) ], Nmice, 1 );...
-                repmat( [ repmat( {'CS-'}, 10, 1 ); repmat( {'CS-'}, 10, 1 ) ], Nmice, 1 )] );
+            trialtype_generic = categorical( [repmat( [ repmat( {'CS+'}, obj.Ntrials, 1 ); repmat( {'CS+'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
+                repmat( [ repmat( {'CS-'}, obj.Ntrials, 1 ); repmat( {'CS-'}, obj.Ntrials, 1 ) ], Nmice, 1 )] );
             
             %trialtype = array2table( repmat(  [repmat( {'CS+1'}, 10, 1 );...
             %                        repmat( {'CS+2'}, 10, 1 );...
@@ -496,7 +511,7 @@ classdef findDisplacedMice < handle
             trialType = lower(trialType);
             
             if nargin<3
-                fprintf('Too few inputs. Usage:\nplot( obj, trialType, scoreType )\n\nOptions for trialType are csplus, csminus\nOptions for scoreType are tremble or ingress');
+                fprintf('\nToo few inputs. Usage:\nplot( obj, trialType, scoreType )\n\nOptions for trialType are csplus, csminus\nOptions for scoreType are tremble or ingress');
                 return
             end
             
@@ -564,7 +579,6 @@ classdef findDisplacedMice < handle
         function txt = dynamic_plot_fxn(~,event_obj,obj,trialType)
             trial = event_obj.Position(1);
             mouseNum = event_obj.Position(2); 
-            if isempty( obj.mouseList ); obj.makeList(); end;
             figure('color','w'); 
             
             mouse_data = obj.mouseObjs.(obj.mouseList{mouseNum});
