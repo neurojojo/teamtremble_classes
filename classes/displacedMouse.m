@@ -44,6 +44,8 @@ classdef displacedMouse < handle
         tend = 200000;
         dsFactor = 10;
         
+        mousePrefix = 'PO|PW';
+        
     end
     
     properties( Access = private )
@@ -399,8 +401,13 @@ classdef displacedMouse < handle
             if strcmp( varargin{1}, 'fitlines' ) % This will fit the whole trial and produce corrected timeseries data
                 obj.fitlines_CSplus = cell2mat(arrayfun( @(x) obj.fitLine(x,'CSplus','fitlines'), [1:trials], 'UniformOutput', false )');
                 obj.fitlines_CSminus = cell2mat(arrayfun( @(x) obj.fitLine(x,'CSminus','fitlines'), [1:trials], 'UniformOutput', false )');
-                obj.corrected_displacement_csplus = obj.displacement_csplus - obj.fitlines_CSplus([1:size(obj.displacement_csplus,1)],:)
-                obj.corrected_displacement_csminus = obj.displacement_csminus - obj.fitlines_CSminus([1:size(obj.displacement_csminus,1)],:);
+                try
+                    obj.corrected_displacement_csplus = obj.displacement_csplus - obj.fitlines_CSplus([1:size(obj.displacement_csplus,1)],:)
+                    obj.corrected_displacement_csminus = obj.displacement_csminus - obj.fitlines_CSminus([1:size(obj.displacement_csminus,1)],:);
+                catch
+                    1
+                end
+                
             end
             
         end

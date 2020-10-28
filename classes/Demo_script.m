@@ -5,18 +5,17 @@ clear all
 addpath( genpath('C:\teamtremble_classes') )
 mymice = findDisplacedMice( 'C:\ActivePassiveAnalysis2' );
 
-%
-mymice.associateKey('C:\\teamtremble_classes\\cs_all_indices_key.csv');
+%%
+mymice.associateKey('C:\\teamtremble_figures\\cs_all_indices_key.csv');
 
 mymice.loadDisplacements_allMice();
 
-mymice.makeList()
 % Manually curated file with three columns (Animal ID, third index of
 % displacement for CS+, third index of displacement for CS-)
+%%
+mymice.associateIngressTimes('C:\\teamtremble_figures\\ingress_times_noingress_set_to_10000.csv');
 
-
-mymice.associateIngressTimes('C:\\teamtremble_classes\\ingress_times_noingress_set_to_10000.csv');
-
+%%
 mymice.fitLines_allMice('coeffs');
 mymice.fitLines_allMice('fitlines');
 mymice.getIngressScore_allMice();
