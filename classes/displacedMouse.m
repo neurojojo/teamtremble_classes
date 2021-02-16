@@ -312,10 +312,6 @@ classdef displacedMouse < handle
             
             obj.trembleScore_csplus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csplus{i}(:,[2000: obj.ingress_index_csplus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
             
-            if numel(obj.trembleScore_csplus.Mag)<20;
-                1
-            end
-            
             % CSminusMINUS
             if isempty( obj.cwt_csminus )
                 w = arrayfun( @(trial) cwt( obj.corrected_displacement_csminus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
@@ -331,11 +327,7 @@ classdef displacedMouse < handle
             % = arbitrary end)
             
             obj.trembleScore_csminus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csminus{i}(:,[2000: obj.ingress_index_csminus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csminus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
-                        
-            if numel(obj.trembleScore_csminus.Mag)<20;
-                1
-            end
-            
+               
             % Duration = Fraction of time between CS onset and the detected
             % ingress during the threshold tremble power of 0.001 is exceeded
             obj.trembleScore_csplus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csplus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csplus{i}( obj.cwt_window, [2000: obj.ingress_index_csplus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN );
@@ -412,6 +404,33 @@ classdef displacedMouse < handle
             
         end
         
+        
+        function cwt_matrix = ingressAlignedCWT_csplus( obj )
+            
+            cwt_matrix = nan( size( obj.cwt_csplus{1},1 ), size( obj.cwt_csplus{1},2 ) , numel( obj.cwt_csplus ) );
+            t_ = size( obj.cwt_csplus{1}, 2 );
+            
+            for i = 1:numel( obj.cwt_csplus )
+                if ~isnan( obj.cwt_csplus{i} )
+                    tmp = obj.cwt_csplus{i}(:, [1:obj.ingress_index_csplus(i)] );
+                    cwt_matrix(:,[1+t_-obj.ingress_index_csplus(i):t_],i) = tmp;
+                end
+            end
+            
+        end
+        function cwt_matrix = ingressAlignedCWT_csminus( obj )
+            
+            cwt_matrix = nan( size( obj.cwt_csplus{1},1 ), size( obj.cwt_csminus{1},2 ) , numel( obj.cwt_csminus ) );
+            t_ = size( obj.cwt_csminus{1}, 2 );
+            
+            for i = 1:numel( obj.cwt_csminus )
+                if ~isnan( obj.cwt_csminus{i} )
+                    tmp = obj.cwt_csminus{i}(:,[1:obj.ingress_index_csminus(i)]  );
+                    cwt_matrix(:,[1+t_-obj.ingress_index_csminus(i):t_],i) = tmp;
+                end
+            end
+            
+        end
         
         % Overloaded functions %
         function save( obj, varargin )
