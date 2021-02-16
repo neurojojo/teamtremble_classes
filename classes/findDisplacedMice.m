@@ -168,35 +168,29 @@ classdef findDisplacedMice < handle
         
         function associateIngressTimes( obj, ingressTableLocation )
 % Looks into the provided 'ingressTableLocation'. Populates the property ingressTable, which contains ingress csplus frames (first ten columns) and csminus frames (second ten columns)  
-            if exist('ingressTableLocation'); 
+            if exist('ingressTableLocation')
                 obj.ingressTableLocation = ingressTableLocation;
-            
                 obj.ingressTable = readtable( ingressTableLocation );
-                if isa('obj.ingressTable.ingress_csminus2_matched_to_name_10','str'); 
-                    obj.ingressTable.ingress_csminus2_matched_to_name_10 = cellfun(@(x) str2double(x), obj.ingressTable.ingress_csminus2_matched_to_name_10 );
-                end
 
                 for thisMouseObj = fields( obj.mouseObjs )'
-                    obj.mouseObjs.(thisMouseObj{1}).associate_csplus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
-                        find(cellfun(@(x) numel(regexp( x, 'csplus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
-                    obj.mouseObjs.(thisMouseObj{1}).associate_csminus_index( table2array(obj.ingressTable( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.matched_names),...
-                        find(cellfun(@(x) numel(regexp( x, 'csminus')), obj.ingressTable.Properties.VariableNames )==1)) ) );
+                    mouserow = find( cellfun(@(x) strcmp(x,thisMouseObj), obj.ingressTable.mouse) == 1 );
+                    tmp1 = table2array(obj.ingressTable( mouserow,...
+                        find(cellfun(@(x) numel(regexp( x, 'csplus')), obj.ingressTable.Properties.VariableNames )==1)) ); tmp1=tmp1(isnan(tmp1)==0);
+                    tmp2 = table2array(obj.ingressTable( mouserow,...
+                        find(cellfun(@(x) numel(regexp( x, 'csminus')), obj.ingressTable.Properties.VariableNames )==1)) ); tmp2=tmp2(isnan(tmp2)==0);
+                    obj.mouseObjs.(thisMouseObj{1}).associate_csplus_index( tmp1 );
+                    obj.mouseObjs.(thisMouseObj{1}).associate_csminus_index(tmp2 );
 
                     obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csplus,2);
                     obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus( isnan(obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus)==1 ) = size(obj.mouseObjs.(thisMouseObj{1}).displacement_csminus,2);
                 end
             else
                 for thisMouseObj = fields( obj.mouseObjs )'
-                    
                     obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type = categorical(obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type);
-                    
                     obj.mouseObjs.(thisMouseObj{1}).ingress_index_csplus = obj.mouseObjs.(thisMouseObj{1}).ingressTable.Changepoint( obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type=='csplus' );
                     obj.mouseObjs.(thisMouseObj{1}).ingress_index_csminus = obj.mouseObjs.(thisMouseObj{1}).ingressTable.Changepoint( obj.mouseObjs.(thisMouseObj{1}).ingressTable.Type=='csminus' );
-                
                 end
             end
-            
-            
             
         end
         
@@ -265,33 +259,40 @@ classdef findDisplacedMice < handle
         
         function mytable = summarize( obj )
             
-            Nmice = numel(fields(obj.mouseObjs));
-            
             %results.ingress_mean = [ structfun( @(x) mean(x.ingressScore_csplus), obj.mouseObjs );...
             %    structfun( @(x) mean(x.ingressScore_csminus), obj.mouseObjs ) ];
             
             %results.tremble_mean = [ structfun( @(x) mean(x.trembleScore_csplus), obj.mouseObjs );...
             %    structfun( @(x) mean(x.trembleScore_csminus), obj.mouseObjs ) ];
             
-            % Collect ingress magnitude %
-            ingress = table( [flat(struct2array( structfun( @(x) x.ingressScore_csplus.AUC_Mag, obj.mouseObjs , 'UniformOutput', false)));...
-                             flat(struct2array( structfun( @(x) x.ingressScore_csminus.AUC_Mag, obj.mouseObjs , 'UniformOutput', false)))] , 'VariableNames', {'Ingress_Mag'} );
+            % Num of trials for each mouse
+            N_csplus_trials_per_mouse = structfun( @(x) size(x.displacement_csplus,1), obj.mouseObjs );
+            N_csminus_trials_per_mouse = structfun( @(x) size(x.displacement_csminus,1), obj.mouseObjs );
+            Mice = fields(obj.mouseObjs);
             
-            % Collect ingress fit quality %
-            fitquality = table( [flat(struct2array( structfun( @(x) x.ingressScore_csplus.AUC_Fit, obj.mouseObjs , 'UniformOutput', false)));...
-                             flat(struct2array( structfun( @(x) x.ingressScore_csminus.AUC_Fit, obj.mouseObjs , 'UniformOutput', false)))] , 'VariableNames', {'Ingress_Fit'} );
+            % Creating an array for the mouse names
+            mouseIds = []; for i = 1:numel(Mice); mouseIds = [ mouseIds; repmat( {Mice{i}}, N_csplus_trials_per_mouse(i), 1 ) ]; end 
+            for i = 1:numel(Mice); mouseIds = [ mouseIds; repmat( {Mice{i}}, N_csminus_trials_per_mouse(i), 1 ) ]; end 
+            
+            % Creating an array for the trial types
+            Ntrials_Per_Type = 10;
+            TrialType = []; for i = 1:numel(Mice); TrialType = [ TrialType; repmat( {'CS+1'}, Ntrials_Per_Type, 1 ); repmat( {'CS+2'}, N_csplus_trials_per_mouse(i)-Ntrials_Per_Type, 1 ) ]; end 
+            for i = 1:numel(Mice); TrialType = [ TrialType; repmat( {'CS-1'}, Ntrials_Per_Type, 1 ); repmat( {'CS-2'}, N_csminus_trials_per_mouse(i)-Ntrials_Per_Type, 1 ) ]; end 
+            
+            TrialType_Generic = []; for i = 1:numel(Mice); TrialType_Generic = [ TrialType_Generic; repmat( {'CS+'}, N_csplus_trials_per_mouse(i), 1 ) ]; end 
+            for i = 1:numel(Mice); TrialType_Generic = [ TrialType_Generic; repmat( {'CS-'}, N_csminus_trials_per_mouse(i), 1 ) ]; end 
+            
+            % Create an array for the trial number
+            TrialNumber = [repmat( [1:Ntrials_Per_Type]', sum(N_csplus_trials_per_mouse)/Ntrials_Per_Type, 1 );...
+                repmat( [1:Ntrials_Per_Type]', sum(N_csminus_trials_per_mouse)/Ntrials_Per_Type, 1 )];
+            
+            % Collect ingress magnitude %
+            ingress = table( [flat(struct2array( structfun( @(x) x.ingressScore_csplus.AUC_Mag', obj.mouseObjs , 'UniformOutput', false)));...
+                             flat(struct2array( structfun( @(x) x.ingressScore_csminus.AUC_Mag', obj.mouseObjs , 'UniformOutput', false)))] , 'VariableNames', {'Ingress_Mag'} );
             
             % Collect ingress onset %
-            onset = table( [flat(struct2array(structfun( @(x) x.ingress_index_csplus, obj.mouseObjs , 'UniformOutput', false )));...
-                flat(struct2array(structfun( @(x) x.ingress_index_csminus, obj.mouseObjs , 'UniformOutput', false )))] , 'VariableNames', {'Ingress_onset'} );
-            
-            % Adjust onset for start and end %   
-            % This way onset range = [0,1]   %
-            % SPECIFIC TO PKO EXPERIMENT     %
-            onset.Ingress_onset(onset.Ingress_onset==10000) = nan;    
-            onset.Ingress_onset = (onset.Ingress_onset-2000)/12000;
-            onset.Ingress_onset(onset.Ingress_onset>1) = nan;
-            % % % % % % % % % % % % % % % % % %
+            onset = table( [flat(struct2array(structfun( @(x) x.ingress_fraction_csplus, obj.mouseObjs , 'UniformOutput', false )));...
+                flat(struct2array(structfun( @(x) x.ingress_fraction_csminus, obj.mouseObjs , 'UniformOutput', false )))] , 'VariableNames', {'Ingress_onset'} );
             
             % Collect tremble magnitude %
             tremble_mag = table( [flat(struct2array( structfun( @(x) x.trembleScore_csplus.Mag, obj.mouseObjs , 'UniformOutput', false)));...
@@ -301,34 +302,37 @@ classdef findDisplacedMice < handle
             tremble_dur = table( [flat(struct2array( structfun( @(x) x.trembleScore_csplus.Dur, obj.mouseObjs , 'UniformOutput', false)));...
                              flat(struct2array( structfun( @(x) x.trembleScore_csminus.Dur, obj.mouseObjs , 'UniformOutput', false)))] , 'VariableNames', {'Tremble_Dur'} );
             
-            obj.Nmice = numel(fields(obj.mouseObjs));
+            % Collect tremble absolute duration %
+            tremble_absdur = table( [flat(struct2array( structfun( @(x) x.trembleScore_csplus.AbsDur, obj.mouseObjs , 'UniformOutput', false)));...
+                             flat(struct2array( structfun( @(x) x.trembleScore_csminus.AbsDur, obj.mouseObjs , 'UniformOutput', false)))] , 'VariableNames', {'Tremble_AbsDur'} );
             
-            fields_ = [cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} );...
-                cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} )];
             
-            trials = array2table( repmat( [1:obj.Ntrials]', numel(fields_)/obj.Ntrials , 1 ), 'VariableNames', {'Trials'} );
             
-            trialtype = array2table( [repmat( [ repmat( {'CS+1'}, obj.Ntrials, 1 ); repmat( {'CS+2'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
-                repmat( [ repmat( {'CS-1'}, obj.Ntrials, 1 ); repmat( {'CS-2'}, obj.Ntrials, 1 ) ], Nmice, 1 )], 'VariableNames', {'TrialType'} );
+            %fields_ = [cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} );...
+            %    cell2table( reshape( repmat( fields( obj.mouseObjs ), 1, obj.Ntrials.*2 )', 2*obj.Ntrials*obj.Nmice, 1 ), 'VariableNames', {'Mice'} )];
             
-            trialtype_generic = categorical( [repmat( [ repmat( {'CS+'}, obj.Ntrials, 1 ); repmat( {'CS+'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
-                repmat( [ repmat( {'CS-'}, obj.Ntrials, 1 ); repmat( {'CS-'}, obj.Ntrials, 1 ) ], Nmice, 1 )] );
+            %trials = array2table( repmat( [1:obj.Ntrials]', numel(fields_)/obj.Ntrials , 1 ), 'VariableNames', {'Trials'} );
+            
+            %trialtype = array2table( [repmat( [ repmat( {'CS+1'}, obj.Ntrials, 1 ); repmat( {'CS+2'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
+            %    repmat( [ repmat( {'CS-1'}, obj.Ntrials, 1 ); repmat( {'CS-2'}, obj.Ntrials, 1 ) ], Nmice, 1 )], 'VariableNames', {'TrialType'} );
+            
+            %trialtype_generic = categorical( [repmat( [ repmat( {'CS+'}, obj.Ntrials, 1 ); repmat( {'CS+'}, obj.Ntrials, 1 ) ], Nmice, 1 );...
+            %    repmat( [ repmat( {'CS-'}, obj.Ntrials, 1 ); repmat( {'CS-'}, obj.Ntrials, 1 ) ], Nmice, 1 )] );
             
             %trialtype = array2table( repmat(  [repmat( {'CS+1'}, 10, 1 );...
             %                        repmat( {'CS+2'}, 10, 1 );...
             %                        repmat( {'CS-1'}, 10, 1 );...
             %                        repmat( {'CS-2'}, 10, 1 )] , 20, 1 ) , 'VariableNames', {'TrialType'} );
                                 
-            mytable = [ fields_, trialtype, trials,...
-                fitquality,...
+            mytable = [ table(mouseIds), table(TrialType), table(TrialType_Generic), table(TrialNumber),...
                 ingress,...
                 tremble_mag,...
                 tremble_dur,...
+                tremble_absdur,...
                 onset];
             mytable.TrialType = categorical( mytable.TrialType );
-            mytable.TrialType_Generic = trialtype_generic;
-            mytable.Mice = categorical( mytable.Mice );
-            %mytable = mytable( ~isnan(mytable.Tremble), : );
+            mytable.TrialType_Generic = categorical( mytable.TrialType_Generic );
+            mytable.mouseIds = categorical( mytable.mouseIds );
             
         end
         

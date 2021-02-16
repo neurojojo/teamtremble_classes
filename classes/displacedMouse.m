@@ -14,17 +14,13 @@ classdef displacedMouse < handle
         csminus_index
         ingress_index_csplus
         ingress_index_csminus
-        displacement_csplus_filtered
-        displacement_csminus_filtered
-        fitlines_CSplus
-        fitlines_CSminus
-        corrected_displacement_csplus
-        corrected_displacement_csminus
         h5_datasets
         cwt_csplus
         cwt_csminus
         ingress_stats_CSplus
         ingress_stats_CSminus
+        ingress_fraction_csplus
+        ingress_fraction_csminus
         aucs_fraction
         trembleScore_csplus
         trembleScore_csminus
@@ -38,7 +34,7 @@ classdef displacedMouse < handle
         trialTable
         ingressTable
         ingressBuffer = 1000;
-        cwt_window = [1:150];
+        cwt_window = [261:325]; % See Demo_script for derivation
         
         t0 = 60000;
         tend = 200000;
@@ -165,103 +161,6 @@ classdef displacedMouse < handle
         function associate_csminus_index(obj, array_ingress_times)
             obj.ingress_index_csminus = array_ingress_times;
         end
-
-
-        % Line-fitting %
-        function myfitline = fitLine( obj, trial, trialType, varargin ) % Fits a piecewise linear function
-            d = 1000;
-            Nframes = obj.Nframes;
-            
-            fprintf('Computing for trial %i\n', trial );
-            
-            %%%%%%%%%%%%%%%%%%
-            % Error handling %
-            %%%%%%%%%%%%%%%%%%
-            
-            if and( strcmp(varargin{1},'coeffs'), size(obj.displacement_csplus,1) < trial)
-                myfitline = nan(1,5);%'No data for this trial';
-               return
-            end
-
-            if and( strcmp(varargin{1},'fitlines'), size(obj.displacement_csplus,1) < trial)
-                myfitline = nan( 1, 14001 );
-               return
-            end
-            
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Check for whether the trialType is CSplus or CSminus %
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
-            if strcmp(trialType,'CSplus')
-                Y = obj.displacement_csplus(trial,:);
-                ing = obj.ingress_index_csplus(trial);
-                % WE SET NO INGRESSES TO 10,000
-                if eq(ing,10000); myfitline = smooth(Y,Nframes/10)'; return; end; % Create zero-vector for displacements lacking ingress
-            else if strcmp(trialType,'CSminus')
-                Y = obj.displacement_csminus(trial,:);
-                ing = obj.ingress_index_csminus(trial);
-                % WE SET NO INGRESSES TO 10,000
-                if eq(ing,10000); myfitline = smooth(Y,Nframes/10)'; return; end; % Create zero-vector for displacements lacking ingress
-                else
-                    fprintf("Specify either 'CSplus' or 'CSminus' as a third argument\n");
-                    myfitline = [];
-                    return
-                end
-            end
-               
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Find coefficients for the lines %
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
-            if strcmp( varargin{1}, 'coeffs' )
-
-                Y_ = Y;
-                Y_([1:ing-d]) = 0;
-                Y_([ing-d+1:min( numel(Y), ing+d )]) = Y([ing-d+1:min( numel(Y), ing+d )]);
-                Y_(ing+d+1:end) = mean(Y(ing+d+1:end));
-
-                [pks_min,locs_min] = min( Y_ );
-                [pks_max,locs_max] = max( Y_ );
-
-                % Parabolic fit
-                coeffs = polyfit( [0:locs_max-locs_min], Y_(locs_min:locs_max), 2 );
-                    
-                myfitline = struct();
-                if locs_min > locs_max
-                    fprintf('Error for %s on trial %i. Check ingress time!\n', obj.mouse, trial)
-                    myfitline = nan(1,5);%'Low quality';
-                else
-                    myfitline = [locs_min,locs_max,coeffs];
-                end
-            end
-            
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Create the fitted lines if coefficients exist        %
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
-            if strcmp( varargin{1}, 'fitlines' )
-                
-                coeffs = obj.(sprintf('ingress_stats_%s',trialType)){trial};
-                
-                if any(isnan(coeffs)); myfitline = nan( 1, 14001 ); return; end
-                
-                [locs_min,locs_max] = deal( coeffs(1), coeffs(2) );
-                coeffs = coeffs(3:end);
-                
-                Fit_Table = struct();
-                Fit_Table.X_pre = [0:locs_min-1];
-                Fit_Table.Y_pre = zeros( numel(1, Fit_Table.X_pre ), 1 );
-                Fit_Table.X_ing = [locs_min:locs_max-1];
-                Fit_Table.Y_ing = polyval( coeffs, [locs_min:locs_max-1]-locs_min )';
-                Fit_Table.X_post = [locs_max+1:numel(Y)];
-                Fit_Table.Y_post = mean(Y([locs_max+1:numel(Y)])) * ones( numel(Fit_Table.X_post), 1 );
-
-                myfitline = [ Fit_Table.Y_pre; Fit_Table.Y_ing; Fit_Table.Y_post ]';
-                
-            end
-            
-            
-        end
         
         function result = searchMouse( obj, query )
         
@@ -293,16 +192,16 @@ classdef displacedMouse < handle
             Nv = 48;
             d = 800;
             
-            % CSminusPLUS
-            fprintf('Computing cwt for %s\n',obj.mouse);
-            
+            % CSplus
+            fprintf('Computing cwt for cs plus %s\n',obj.mouse);
+            % Extract number of trials here
+            trials = size( obj.displacement_csplus,1 );
             if isempty( obj.cwt_csplus )
-                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
+                w = arrayfun( @(trial) cwt( obj.displacement_csplus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
                 close all;
-                w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
-                w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
+                w_conj = arrayfun( @(trial) w{trial}(obj.cwt_window,:).*conj( w{trial}(obj.cwt_window,:) ), [1:trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
                 % REMOVE EXCESSIVE INFORMATION FROM CWT %
-                w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
+                % w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
                 obj.cwt_csplus = w_conj;
             end
             
@@ -310,27 +209,28 @@ classdef displacedMouse < handle
             % = arbitrary end)
             ingressBuffer = 1000;
             
-            obj.trembleScore_csplus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csplus{i}(:,[2000: obj.ingress_index_csplus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
+            obj.trembleScore_csplus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csplus{i}(:,[2000: obj.ingress_index_csplus(i)-ingressBuffer ])), [1:trials], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
             
-            if numel(obj.trembleScore_csplus.Mag)<20;
+            % CSminusMINUS
+            fprintf('Computing cwt for cs minus %s\n',obj.mouse);
+            % Extract number of trials here
+            trials = size( obj.displacement_csminus,1 );
+            
+            if strcmp(obj.mouse,'PO343'); 
                 1
             end
             
-            % CSminusMINUS
             if isempty( obj.cwt_csminus )
-                w = arrayfun( @(trial) cwt( obj.corrected_displacement_csminus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
+                w = arrayfun( @(trial) cwt( obj.displacement_csminus( trial , :), obj.fs, 'NumOctaves',No, 'VoicesPerOctave',Nv), [1:trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
                 close all;
-                w = cellfun( @(this_w) this_w( obj.w_limits_x, : ), w, 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false );
-                w_conj = arrayfun( @(trial) w{trial}.*conj( w{trial} ), [1:obj.trials], 'UniformOutput', false );
+                w_conj = arrayfun( @(trial) w{trial}(obj.cwt_window,:).*conj( w{trial}(obj.cwt_window,:) ), [1:trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
                 % REMOVE EXCESSIVE INFORMATION FROM CWT %
-                w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
+                % w_conj = cellfun( @(this_cell) this_cell .* im2bw( this_cell,10^-5 ), w_conj, 'UniformOutput', false );
                 obj.cwt_csminus = w_conj;
             end
             
-            % Frequency band 200-350, time is 2000:8000 (2000 = cs on, 8000
-            % = arbitrary end)
-            
-            obj.trembleScore_csminus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csminus{i}(:,[2000: obj.ingress_index_csminus(i)-ingressBuffer ])), [1:numel(obj.ingress_index_csminus)], 'ErrorHandler', @(x,y) NaN, 'UniformOutput', false ) );
+            % If any empty matrix goes into max_of_grad_adj_img, the output is NaN
+            obj.trembleScore_csminus.Mag = cell2mat( arrayfun( @(i) obj.max_of_grad_adj_img( obj.cwt_csminus{i}(:,[2000: obj.ingress_index_csminus(i)-ingressBuffer ])), [1:trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) nan ) ); % Error handler is here because there is an empty trial
                         
             if numel(obj.trembleScore_csminus.Mag)<20;
                 1
@@ -338,9 +238,21 @@ classdef displacedMouse < handle
             
             % Duration = Fraction of time between CS onset and the detected
             % ingress during the threshold tremble power of 0.001 is exceeded
-            obj.trembleScore_csplus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csplus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csplus{i}( obj.cwt_window, [2000: obj.ingress_index_csplus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:numel(obj.ingress_index_csplus)], 'ErrorHandler', @(x,y) NaN );
-            obj.trembleScore_csminus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csminus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csminus{i}( obj.cwt_window, [2000: obj.ingress_index_csminus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:numel(obj.ingress_index_csminus)], 'ErrorHandler', @(x,y) NaN );
+            obj.trembleScore_csplus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csplus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csplus{i}( : , [2000: obj.ingress_index_csplus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:trials], 'ErrorHandler', @(x,y) nan  );
+            obj.trembleScore_csminus.Dur = arrayfun( @(i) (1/ (obj.ingress_index_csminus(i) - 2000 - obj.ingressBuffer) ).*sum(sum( any(im2bw( obj.cwt_csminus{i}( : , [2000: obj.ingress_index_csminus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:trials], 'ErrorHandler', @(x,y) nan  );
             
+            obj.trembleScore_csplus.AbsDur = arrayfun( @(i) sum(sum( any(im2bw( obj.cwt_csplus{i}( : , [2000: obj.ingress_index_csplus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:trials], 'ErrorHandler', @(x,y) nan  );
+            obj.trembleScore_csminus.AbsDur = arrayfun( @(i) sum(sum( any(im2bw( obj.cwt_csminus{i}( : , [2000: obj.ingress_index_csminus(i) - obj.ingressBuffer ]), obj.threshold_min )), 1 )), [1:trials], 'ErrorHandler', @(x,y) nan  );
+            
+            % If an empty matrix goes in because the ingress occurs too close to CS onset, the output is set to NaN
+            obj.trembleScore_csplus.Dur( lt(obj.ingress_index_csplus - obj.ingressBuffer, 2000 ) ) = nan;
+            obj.trembleScore_csminus.Dur( lt(obj.ingress_index_csminus - obj.ingressBuffer, 2000 ) ) = nan;
+           
+            % If there is no ingress for a trial, 
+            no_ingress_trials = find(obj.ingress_index_csplus==10000);
+            obj.trembleScore_csplus.Dur(no_ingress_trials) = arrayfun( @(i) 1/(size(obj.displacement_csplus,2)-obj.ingressBuffer).*sum(sum( any(im2bw( obj.cwt_csplus{i}( : , [2000:end]), obj.threshold_min )), 1 )), no_ingress_trials );
+            no_ingress_trials = find(obj.ingress_index_csminus==10000);
+            obj.trembleScore_csminus.Dur(no_ingress_trials) = arrayfun( @(i) 1/(size(obj.displacement_csminus,2)-obj.ingressBuffer).*sum(sum( any(im2bw( obj.cwt_csminus{i}( : , [2000:end]), obj.threshold_min )), 1 )), no_ingress_trials );
             toc;
             
         end
@@ -358,7 +270,7 @@ classdef displacedMouse < handle
             
             % Currently the maximum AUC possible is calibrated to the
             % maximum displacement achieved by a given mouse
-            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csplus(trial,:)) - obj.ingress_index_csplus(trial)] * max2(obj.displacement_csplus), [1:Ntrials], 'ErrorHandler', @(x,y) NaN );
+            aucs_rect = arrayfun( @(trial) [numel(obj.displacement_csplus(trial,:)) - obj.ingress_index_csplus(trial)] * max2(obj.displacement_csplus), [1:Ntrials] );
             aucs_(aucs_<0) = 0;
             ingressScore_csplus = aucs_./aucs_rect;
             
@@ -367,77 +279,17 @@ classdef displacedMouse < handle
             aucs_(aucs_<0) = 0;
             ingressScore_csminus = aucs_./aucs_rect;
             
-            if numel( ingressScore_csplus )<obj.trials; ingressScore_csplus = [ ingressScore_csplus, nan(1, obj.trials - numel(ingressScore_csplus) ) ]; end
-            if numel( ingressScore_csminus )<obj.trials; ingressScore_csminus = [ ingressScore_csminus, nan(1, obj.trials - numel(ingressScore_csminus) ) ]; end
+            obj.ingressScore_csplus = table( ingressScore_csplus', 'VariableNames', {'AUC_Mag'} );
+            obj.ingressScore_csminus = table(  ingressScore_csminus', 'VariableNames', {'AUC_Mag'} );
             
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Compare the fit line to the ingress-model %
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
-            corrcoefs_csplus = arrayfun( @(i) corrcoef( obj.fitlines_CSplus(i,:), obj.displacement_csplus(i,:) ), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
-            corrcoefs_csminus = arrayfun( @(i) corrcoef( obj.fitlines_CSminus(i,:), obj.displacement_csminus(i,:) ), [1:obj.trials], 'UniformOutput', false, 'ErrorHandler', @(x,y) NaN );
-            
-            corrcoefs_csplus = cellfun( @(i) i(2), corrcoefs_csplus, 'ErrorHandler', @(x,y) NaN );
-            corrcoefs_csminus = cellfun( @(i) i(2), corrcoefs_csminus, 'ErrorHandler', @(x,y) NaN );
-                        
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            % Add corrcoefs to the ingress score stats  %
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-            
-            obj.ingressScore_csplus = table( corrcoefs_csplus', ingressScore_csplus', 'VariableNames', {'AUC_Fit','AUC_Mag'} );
-            obj.ingressScore_csminus = table( corrcoefs_csminus', ingressScore_csminus', 'VariableNames', {'AUC_Fit','AUC_Mag'} );
-            
-        end
-        
-        function fitLine_allTrials( obj, varargin ) % Runs fitline on every trial, CSplus and CSminus
-            
-            fprintf('Fitting for Mouse %s\n', obj.mouse );
-            trials = obj.trials; % Get all the trials
-            if strcmp( varargin{1}, 'coeffs' ) % This will model the ingress only
-                obj.ingress_stats_CSplus = arrayfun( @(x) obj.fitLine(x,'CSplus','coeffs'), [1:trials], 'UniformOutput', false )';
-                obj.ingress_stats_CSminus = arrayfun( @(x) obj.fitLine(x,'CSminus','coeffs'), [1:trials], 'UniformOutput', false )';
-            end
-            
-            if strcmp( varargin{1}, 'fitlines' ) % This will fit the whole trial and produce corrected timeseries data
-                obj.fitlines_CSplus = cell2mat(arrayfun( @(x) obj.fitLine(x,'CSplus','fitlines'), [1:trials], 'UniformOutput', false )');
-                obj.fitlines_CSminus = cell2mat(arrayfun( @(x) obj.fitLine(x,'CSminus','fitlines'), [1:trials], 'UniformOutput', false )');
-                try
-                    obj.corrected_displacement_csplus = obj.displacement_csplus - obj.fitlines_CSplus([1:size(obj.displacement_csplus,1)],:)
-                    obj.corrected_displacement_csminus = obj.displacement_csminus - obj.fitlines_CSminus([1:size(obj.displacement_csminus,1)],:);
-                catch
-                    1
-                end
-                
-            end
-            
-        end
-        
-        
-        % Overloaded functions %
-        function save( obj, varargin )
-           
-           
-            if any(strcmp(varargin,'h5'))
-                % Check if the directory exists
-                myh5dir = sprintf('%s\\h5',cd);
-                myh5file = sprintf('%s\\%s.h5',myh5dir,obj.mouse);
-                
-                if isdir( myh5dir )
-                else
-                   mkdir( myh5dir )
-                end
-                % Start saving
-                
-                if exist( myh5file )
-                else
-                    h5create(myh5file,'/displacement_csplus',size(obj.displacement_csplus) );
-                    h5create(myh5file,'/displacement_csminus',size(obj.displacement_csminus) );
-                    h5create(myh5file,'/ingress_index_csplus',size(obj.ingress_index_csplus) );
-                    h5create(myh5file,'/ingress_index_csminus',size(obj.ingress_index_csminus) );
-                end
-                
-                obj.writeH5displacements(myh5dir)
-            end
+            % Adjust onset for start and end %   
+            % This way onset range = [0,1]   %
+            % SPECIFIC TO PKO EXPERIMENT     %   
+            obj.ingress_fraction_csplus = (obj.ingress_index_csplus-2000)/12000;
+            obj.ingress_fraction_csplus( obj.ingress_index_csplus==10000 ) = nan;  
+            obj.ingress_fraction_csminus = (obj.ingress_index_csminus-2000)/12000;
+            obj.ingress_fraction_csminus( obj.ingress_index_csminus==10000 ) = nan;   
+            % % % % % % % % % % % % % % % % % %
             
         end
         
@@ -524,4 +376,3 @@ classdef displacedMouse < handle
     end
     
 end
-
